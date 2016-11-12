@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/gob"
 	"flag"
 	"fmt"
 	"io"
@@ -54,7 +55,7 @@ func main() {
 			os.Exit(1)
 		}
 	case "groups":
-		accessToken, err := authenticate(consumer)
+		accessToken, err := getAccessToken(consumer)
 		if err != nil {
 			fmt.Printf("failed to authenticated, gotten: %v", err)
 			os.Exit(1)
@@ -77,6 +78,25 @@ func main() {
 	}
 }
 
+func getAccessToken(consumer *oauth.Consumer) (*oauth.AccessToken, error) {
+	// TODO check storage
+	file, err := os.Open("/tmp/splitwise")
+	if err == nil {
+		var token = new(oauth.AccessToken)
+		err = gob.NewDecoder(file).Decode(token)
+		if err == nil {
+			return token, nil
+		} else {
+			fmt.Println(err)
+		}
+	} else {
+		fmt.Println(err)
+	}
+
+	// if not in storage authenticate
+	return authenticate(consumer)
+}
+
 func authenticate(consumer *oauth.Consumer) (*oauth.AccessToken, error) {
 	var verification = make(chan string)
 	go func() {
@@ -96,11 +116,22 @@ func authenticate(consumer *oauth.Consumer) (*oauth.AccessToken, error) {
 
 	browser.OpenURL(loginURL)
 
-	return consumer.AuthorizeToken(rtoken, <-verification)
+	accessToken, err := consumer.AuthorizeToken(rtoken, <-verification)
+	if err != nil {
+		return nil, err
+	}
+
+	file, err := os.Create("/tmp/splitwise")
+	if err != nil {
+		return nil, err
+	}
+	err = gob.NewEncoder(file).Encode(accessToken)
+
+	return accessToken, err
 }
 
 func test(consumer *oauth.Consumer) error {
-	accessToken, err := authenticate(consumer)
+	accessToken, err := getAccessToken(consumer)
 	if err != nil {
 		return err
 	}
